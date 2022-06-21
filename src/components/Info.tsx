@@ -283,7 +283,7 @@ export default class Info extends React.PureComponent<Props, State> {
               target="_blank"
               title={"Link to Spotify"}
             >
-              <img alt={name} src={SpotifyIcon} style={{padding:"5px"}} />
+              <img alt={name} src={SpotifyIcon} style={{padding:"10px"}} />
             </a>
           </Title>
         )}
