@@ -2,6 +2,8 @@ import * as React from 'react';
 
 import Favorite from './icons/Favorite';
 import FavoriteOutline from './icons/FavoriteOutline';
+//import SpotifyIcon from './icons/Spotify_Icon_CMYK_White.png';
+import SpotifyIcon from './icons/Spotify_Icon_CMYK_Black.png';
 
 import { checkTracksStatus, removeTracks, saveTracks } from '../spotify';
 import { px, styled } from '../styles';
@@ -238,6 +240,7 @@ export default class Info extends React.PureComponent<Props, State> {
         )}
         {!!name && (
           <Title style={{ c: color, h: height, activeColor, trackArtistColor, trackNameColor }}>
+            <span>
             <p>
               <span>
                 <a
@@ -272,6 +275,16 @@ export default class Info extends React.PureComponent<Props, State> {
                 );
               })}
             </p>
+            </span>
+            <a
+              aria-label={"Link to Spotify"}
+              href={getSpotifyLink(uri)}
+              rel="noreferrer"
+              target="_blank"
+              title={"Link to Spotify"}
+            >
+              <img alt={name} src={SpotifyIcon} style={{padding:"5px"}} />
+            </a>
           </Title>
         )}
       </Wrapper>
