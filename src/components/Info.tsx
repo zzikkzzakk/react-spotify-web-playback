@@ -2,8 +2,8 @@ import * as React from 'react';
 
 import Favorite from './icons/Favorite';
 import FavoriteOutline from './icons/FavoriteOutline';
-//import SpotifyIcon from './icons/Spotify_Icon_CMYK_White.png';
-import SpotifyIcon from './icons/Spotify_Icon_CMYK_Black.png';
+import SpotifyIcon from './icons/Spotify_Icon_CMYK_White.png';
+//import SpotifyIcon from './icons/Spotify_Icon_CMYK_Black.png';
 
 import { checkTracksStatus, removeTracks, saveTracks } from '../spotify';
 import { px, styled } from '../styles';
