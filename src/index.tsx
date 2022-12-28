@@ -23,6 +23,7 @@ import {
 } from './spotify';
 import { getMergedStyles } from './styles';
 import {
+  CallbackState,
   PlayOptions,
   Props,
   SpotifyDevice,
@@ -30,13 +31,6 @@ import {
   SpotifyPlayerStatus,
   State,
   StylesOptions,
-  WebPlaybackAlbum,
-  WebPlaybackArtist,
-  WebPlaybackError,
-  WebPlaybackImage,
-  WebPlaybackPlayer,
-  WebPlaybackReady,
-  WebPlaybackState,
 } from './types';
 import {
   getLocale,
@@ -50,10 +44,12 @@ import {
   validateURI,
 } from './utils';
 
+import { Spotify } from '../global';
+
 class SpotifyWebPlayer extends React.PureComponent<Props, State> {
   private isActive = false;
   private emptyTrack = {
-    artists: [] as WebPlaybackArtist[],
+    artists: [] as Spotify.Artist[],
     durationMs: 0,
     id: '',
     image: '',
@@ -100,7 +96,7 @@ class SpotifyWebPlayer extends React.PureComponent<Props, State> {
   });
 
   private hasNewToken = false;
-  private player?: WebPlaybackPlayer;
+  private player?: Spotify.Player;
   private playerProgressInterval?: number;
   private playerSyncInterval?: number;
   private ref = React.createRef<HTMLDivElement>();
@@ -139,7 +135,6 @@ class SpotifyWebPlayer extends React.PureComponent<Props, State> {
 
   // eslint-disable-next-line react/static-property-placement
   static defaultProps = {
-    callback: () => undefined,
     magnifySliderOnHover: false,
     name: 'Spotify Web Player',
     showSaveIcon: false,
@@ -170,7 +165,6 @@ class SpotifyWebPlayer extends React.PureComponent<Props, State> {
       this.state;
     const {
       autoPlay,
-      callback,
       offset,
       play: playProp,
       showSaveIcon,
@@ -205,7 +199,7 @@ class SpotifyWebPlayer extends React.PureComponent<Props, State> {
     }
 
     if (previousState.status !== status) {
-      callback!({
+      this.handleCallback({
         ...this.state,
         type: TYPE.STATUS,
       });
@@ -213,7 +207,7 @@ class SpotifyWebPlayer extends React.PureComponent<Props, State> {
 
     if (previousState.currentDeviceId !== currentDeviceId && currentDeviceId) {
       if (!isReady) {
-        callback!({
+        this.handleCallback({
           ...this.state,
           type: TYPE.DEVICE,
         });
@@ -224,7 +218,7 @@ class SpotifyWebPlayer extends React.PureComponent<Props, State> {
     }
 
     if (previousState.track.id !== track.id && track.id) {
-      callback!({
+      this.handleCallback({
         ...this.state,
         type: TYPE.TRACK,
       });
@@ -238,7 +232,7 @@ class SpotifyWebPlayer extends React.PureComponent<Props, State> {
       this.toggleProgressBar();
       await this.toggleSyncInterval(this.isExternalPlayer);
 
-      callback!({
+      this.handleCallback({
         ...this.state,
         type: TYPE.PLAYER,
       });
@@ -279,12 +273,12 @@ class SpotifyWebPlayer extends React.PureComponent<Props, State> {
     }
   }
 
-  public componentWillUnmount() {
+  public async componentWillUnmount() {
     this.isActive = false;
 
     /* istanbul ignore else */
     if (this.player) {
-      this.player.disconnect();
+      await this.player.disconnect();
     }
 
     clearInterval(this.playerSyncInterval);
@@ -296,6 +290,14 @@ class SpotifyWebPlayer extends React.PureComponent<Props, State> {
     const { currentDeviceId, deviceId, status } = this.state;
 
     return (currentDeviceId && currentDeviceId !== deviceId) || status === STATUS.UNSUPPORTED;
+  }
+
+  private handleCallback(state: CallbackState): void {
+    const { callback } = this.props;
+
+    if (callback) {
+      callback(state);
+    }
   }
 
   private handleChangeRange = async (position: number) => {
@@ -315,7 +317,7 @@ class SpotifyWebPlayer extends React.PureComponent<Props, State> {
           progressMs: progress,
         });
       } else if (this.player) {
-        const state = (await this.player.getCurrentState()) as WebPlaybackState;
+        const state = await this.player.getCurrentState();
 
         if (state) {
           progress = Math.round(state.track_window.current_track.duration_ms * percentage);
@@ -423,13 +425,12 @@ class SpotifyWebPlayer extends React.PureComponent<Props, State> {
 
   private handleFavoriteStatusChange = (status: boolean) => {
     const { isSaved } = this.state;
-    const { callback } = this.props;
 
     this.updateState({ isSaved: status });
 
     /* istanbul ignore else */
     if (isSaved !== status) {
-      callback!({
+      this.handleCallback({
         ...this.state,
         isSaved: status,
         type: TYPE.FAVORITE,
@@ -470,7 +471,7 @@ class SpotifyWebPlayer extends React.PureComponent<Props, State> {
     });
   };
 
-  private handlePlayerStateChanges = async (state: WebPlaybackState | null) => {
+  private handlePlayerStateChanges = async (state: Spotify.PlaybackState) => {
     try {
       /* istanbul ignore else */
       if (state) {
@@ -539,7 +540,7 @@ class SpotifyWebPlayer extends React.PureComponent<Props, State> {
     }
   };
 
-  private handlePlayerStatus = async ({ device_id }: WebPlaybackReady) => {
+  private handlePlayerStatus = async ({ device_id }: Spotify.WebPlaybackInstance) => {
     const { currentDeviceId, devices } = await this.initializeDevices(device_id);
 
     this.updateState({
@@ -582,32 +583,35 @@ class SpotifyWebPlayer extends React.PureComponent<Props, State> {
 
   private initializePlayer = () => {
     const { volume } = this.state;
-    const { name, token } = this.props;
+    const { name = 'Spotify Web Player', token } = this.props;
+
+    if (!window.Spotify) {
+      return;
+    }
 
     this.updateState({ isInitializing: true });
 
-    // @ts-ignore
     this.player = new window.Spotify.Player({
       getOAuthToken: (callback: SpotifyPlayerCallback) => {
         callback(token);
       },
       name,
       volume,
-    }) as WebPlaybackPlayer;
+    });
 
     this.player.addListener('ready', this.handlePlayerStatus);
     this.player.addListener('not_ready', this.handlePlayerStatus);
     this.player.addListener('player_state_changed', this.handlePlayerStateChanges);
-    this.player.addListener('initialization_error', (error: WebPlaybackError) =>
+    this.player.addListener('initialization_error', error =>
       this.handlePlayerErrors('initialization_error', error.message),
     );
-    this.player.addListener('authentication_error', (error: WebPlaybackError) =>
+    this.player.addListener('authentication_error', error =>
       this.handlePlayerErrors('authentication_error', error.message),
     );
-    this.player.addListener('account_error', (error: WebPlaybackError) =>
+    this.player.addListener('account_error', error =>
       this.handlePlayerErrors('account_error', error.message),
     );
-    this.player.addListener('playback_error', (error: WebPlaybackError) =>
+    this.player.addListener('playback_error', error =>
       this.handlePlayerErrors('playback_error', error.message),
     );
 
@@ -615,10 +619,9 @@ class SpotifyWebPlayer extends React.PureComponent<Props, State> {
   };
 
   // eslint-disable-next-line class-methods-use-this
-  private setAlbumImage = (album: WebPlaybackAlbum): string => {
-    const width = Math.min(...album.images.map(d => d.width));
-    const thumb: WebPlaybackImage =
-      album.images.find(d => d.width === width) || ({} as WebPlaybackImage);
+  private setAlbumImage = (album: Spotify.Album): string => {
+    const width = Math.min(...album.images.map(d => d.width || 0));
+    const thumb: Spotify.Image = album.images.find(d => d.width === width) || ({} as Spotify.Image);
 
     return thumb.url;
   };
@@ -785,7 +788,7 @@ class SpotifyWebPlayer extends React.PureComponent<Props, State> {
       } else if (this.player) {
         const playerState = await this.player.getCurrentState();
 
-        this.player.activateElement();
+        await this.player.activateElement();
 
         // eslint-disable-next-line unicorn/prefer-ternary
         if (
@@ -830,7 +833,7 @@ class SpotifyWebPlayer extends React.PureComponent<Props, State> {
           progressMs: progressMs + this.seekUpdateInterval,
         });
       } else if (this.player) {
-        const state = (await this.player.getCurrentState()) as WebPlaybackState;
+        const state = await this.player.getCurrentState();
 
         /* istanbul ignore else */
         if (state) {
